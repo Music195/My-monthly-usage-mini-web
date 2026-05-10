@@ -13,7 +13,7 @@ function loadPage(pageId) {
     const targetSection = document.getElementById(pageId);
     if (targetSection) {
         targetSection.classList.remove('d-none');
-        
+
         // Re-trigger CSS animation
         targetSection.classList.remove('fade-in');
         void targetSection.offsetWidth; // Trigger reflow
@@ -26,7 +26,7 @@ function loadPage(pageId) {
 const darkModeToggle = document.getElementById('darkModeToggle');
 darkModeToggle.addEventListener('click', () => {
     document.body.classList.toggle('dark-mode');
-    
+
     // Update chart colors if analytics page is viewed
     updateChartTheme();
 });
@@ -63,7 +63,7 @@ let myChart = new Chart(ctx, {
 function updateChartTheme() {
     const isDark = document.body.classList.contains('dark-mode');
     const color = isDark ? '#e0e0e0' : '#212529';
-    
+
     myChart.options.plugins.legend.labels.color = color;
     myChart.options.scales.x.ticks.color = color;
     myChart.options.scales.y.ticks.color = color;
@@ -73,7 +73,7 @@ function updateChartTheme() {
 // --- NEW SPREADSHEET DATA & VISUALIZATION LOGIC ---
 
 // Require Google Apps Script URL here!
-const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbye76BloB1wD50CN2I90s9zDC24gY2cnv_LHXRovlvWe_9g47fAatBtVJSBqleospH3/exec";
+const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycby7EMU_5pAyFOjP03KS82diU4ryFwiyk0fkVGRmYIdFpGTz-z9qRwMbuIjEmWiGpbiN/exec";
 
 // 1. Fetch the live data from Google Sheets
 async function fetchLiveBudget() {
@@ -86,7 +86,7 @@ async function fetchLiveBudget() {
     try {
         const response = await fetch(SPREADSHEET_API_URL);
         const liveData = await response.json();
-        
+
         // Pass the live data to our rendering function
         renderOverviewCards(liveData);
     } catch (error) {
@@ -102,7 +102,21 @@ function renderOverviewCards(monthlyData) {
 
     monthlyData.forEach(data => {
         // Skip empty rows if any exist in the spreadsheet
-        if (!data.month) return; 
+        if (!data.month) return;
+
+        // To change month into Human readable form
+        // normalize month label (handles number, Date, or ISO string)
+let monthLabel = data.month;
+if (typeof monthLabel === 'number') {
+  monthLabel = new Date(monthLabel);
+} else if (typeof monthLabel === 'string') {
+  const parsed = new Date(monthLabel);
+  if (!isNaN(parsed)) monthLabel = parsed;
+}
+
+if (monthLabel instanceof Date && !isNaN(monthLabel)) {
+  monthLabel = monthLabel.toLocaleString(undefined, { year: 'numeric', month: 'long', timeZone: 'UTC' });
+}
 
         const isPositive = data.saved >= 0;
         const savedColor = isPositive ? 'text-success' : 'text-danger';
@@ -110,14 +124,14 @@ function renderOverviewCards(monthlyData) {
 
         const incomePct = data.income.planned > 0 ? Math.min((data.income.actual / data.income.planned) * 100, 100) : 0;
         const expPct = data.expenses.planned > 0 ? Math.min((data.expenses.actual / data.expenses.planned) * 100, 100) : 0;
-        
+
         const expColor = data.expenses.actual > data.expenses.planned ? 'bg-danger' : 'bg-warning';
 
         htmlContent += `
         <div class="col-md-6 mb-4">
             <div class="card shadow-sm h-100">
                 <div class="card-body">
-                    <h5 class="card-title fw-bold text-secondary">${data.month}</h5>
+                    <h5 class="card-title fw-bold text-secondary">${monthLabel}</h5>
                     <h3 class="${savedColor} mb-4">
                         ${savedIcon} ¥${Math.abs(data.saved).toLocaleString()} 
                         <span class="fs-6 text-muted" style="color: var(--text-color) !important;">Net Savings</span>
