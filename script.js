@@ -72,7 +72,7 @@ function updateChartTheme() {
 // --- NEW SPREADSHEET DATA & VISUALIZATION LOGIC ---
 
 // Require Google Apps Script URL here!
-const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbxqkHOGCbXc2jo56uTuIiJbos6raq83TL6Oo9744WfMho2jMdtqu5ehWgkPjUrFMhYb/exec";
+const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbwyNoxt239cTmhwOjqVAhkva9hhCR0rain07DewrY8Zzc68Y9s0hcqcIwS1gA-VVpx1/exec";
 
 // 1. Fetch the live data from Google Sheets
 // A global variable to store the data for all months so we don't have to re-fetch when toggling
@@ -86,7 +86,6 @@ async function fetchLiveBudget() {
     container.innerHTML = '<div class="col-12"><p class="text-muted">Loading live data from Google Sheets...</p></div>';
 
     try {
-        // Make sure to use your actual Apps Script URL here
         const response = await fetch(SPREADSHEET_API_URL);
         globalBudgetData = await response.json(); 
 
