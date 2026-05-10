@@ -1,4 +1,3 @@
-// script.js
 
 // 1. Dynamic Page Content Loading (No Reload)
 function loadPage(pageId) {
@@ -73,97 +72,120 @@ function updateChartTheme() {
 // --- NEW SPREADSHEET DATA & VISUALIZATION LOGIC ---
 
 // Require Google Apps Script URL here!
-const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycby7EMU_5pAyFOjP03KS82diU4ryFwiyk0fkVGRmYIdFpGTz-z9qRwMbuIjEmWiGpbiN/exec";
+const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbxqkHOGCbXc2jo56uTuIiJbos6raq83TL6Oo9744WfMho2jMdtqu5ehWgkPjUrFMhYb/exec";
 
 // 1. Fetch the live data from Google Sheets
+// A global variable to store the data for all months so we don't have to re-fetch when toggling
+let globalBudgetData = {}; 
+
 async function fetchLiveBudget() {
-    const container = document.getElementById('budget-summary-container');
+    const container = document.getElementById('top-balances-container');
+    const monthSelector = document.getElementById('monthSelector');
     if (!container) return;
 
-    // Show a loading message while waiting for Google Sheets
     container.innerHTML = '<div class="col-12"><p class="text-muted">Loading live data from Google Sheets...</p></div>';
 
     try {
+        // Make sure to use your actual Apps Script URL here
         const response = await fetch(SPREADSHEET_API_URL);
-        const liveData = await response.json();
+        globalBudgetData = await response.json(); 
 
-        // Pass the live data to our rendering function
-        renderOverviewCards(liveData);
+        // 1. Populate the Dropdown menu with the months found in the spreadsheet
+        monthSelector.innerHTML = ''; 
+        const availableMonths = Object.keys(globalBudgetData); // e.g., ["April", "May"]
+        
+        availableMonths.forEach(month => {
+            const option = document.createElement('option');
+            option.value = month;
+            option.textContent = month;
+            monthSelector.appendChild(option);
+        });
+
+        // 2. Render the first available month automatically
+        if (availableMonths.length > 0) {
+            // Select the most recent month (the last one in the array)
+            const latestMonth = availableMonths[availableMonths.length - 1];
+            monthSelector.value = latestMonth;
+            renderSummaryTable(globalBudgetData[latestMonth]);
+        } else {
+            container.innerHTML = '<div class="col-12"><p class="text-warning">No Summary tabs found in spreadsheet.</p></div>';
+        }
+        
     } catch (error) {
         console.error("Error fetching live data:", error);
         container.innerHTML = '<div class="col-12"><p class="text-danger fw-bold">Failed to connect to the spreadsheet API.</p></div>';
     }
 }
 
+// Function triggered whenever the dropdown menu changes
+function changeMonth() {
+    const selectedMonth = document.getElementById('monthSelector').value;
+    
+    // Look up the data for the chosen month and re-draw the tables
+    if (globalBudgetData[selectedMonth]) {
+        renderSummaryTable(globalBudgetData[selectedMonth]);
+    }
+}
+
+// const data = {
+//     "startBalance": 59805,
+//     "endBalance": 39387,
+//     "saved": -20418,
+//     "expenses": {
+//         "categories": [
+//             { "name": "Food", "planned": 30000, "actual": 16188, "diff": 13812 },
+//             { "name": "Utilities", "planned": 20000, "actual": 11750, "diff": 8250 }
+//         ]
+//     },
+//     "income": {
+//         "categories": [
+//             { "name": "Paycheck", "planned": 200000, "actual": 0, "diff": -200000 }
+//         ]
+//     }
+// }
 // 2. Render the visual data flows
-function renderOverviewCards(monthlyData) {
-    const container = document.getElementById('budget-summary-container');
-    let htmlContent = '';
+function renderSummaryTable(data) {
+    const expensesBody = document.getElementById('expenses-body');
+    const incomeBody = document.getElementById('income-body');
+    const balancesContainer = document.getElementById('top-balances-container');
 
-    monthlyData.forEach(data => {
-        // Skip empty rows if any exist in the spreadsheet
-        if (!data.month) return;
+    // 1. Render Top Balances
+    balancesContainer.innerHTML = `
+        <div class="col-md-4"><div class="card p-3 shadow-sm"><h5>Start Balance</h5><h3>¥${data.startBalance}</h3></div></div>
+        <div class="col-md-4"><div class="card p-3 shadow-sm"><h5>End Balance</h5><h3>¥${data.endBalance}</h3></div></div>
+        <div class="col-md-4"><div class="card p-3 shadow-sm"><h5>Saved this Month</h5><h3 class="text-primary">¥${data.saved}</h3></div></div>
+    `;
 
-        // To change month into Human readable form
-        // normalize month label (handles number, Date, or ISO string)
-let monthLabel = data.month;
-if (typeof monthLabel === 'number') {
-  monthLabel = new Date(monthLabel);
-} else if (typeof monthLabel === 'string') {
-  const parsed = new Date(monthLabel);
-  if (!isNaN(parsed)) monthLabel = parsed;
-}
-
-if (monthLabel instanceof Date && !isNaN(monthLabel)) {
-  monthLabel = monthLabel.toLocaleString(undefined, { year: 'numeric', month: 'long', timeZone: 'UTC' });
-}
-
-        const isPositive = data.saved >= 0;
-        const savedColor = isPositive ? 'text-success' : 'text-danger';
-        const savedIcon = isPositive ? '▲' : '▼';
-
-        const incomePct = data.income.planned > 0 ? Math.min((data.income.actual / data.income.planned) * 100, 100) : 0;
-        const expPct = data.expenses.planned > 0 ? Math.min((data.expenses.actual / data.expenses.planned) * 100, 100) : 0;
-
-        const expColor = data.expenses.actual > data.expenses.planned ? 'bg-danger' : 'bg-warning';
-
-        htmlContent += `
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <h5 class="card-title fw-bold text-secondary">${monthLabel}</h5>
-                    <h3 class="${savedColor} mb-4">
-                        ${savedIcon} ¥${Math.abs(data.saved).toLocaleString()} 
-                        <span class="fs-6 text-muted" style="color: var(--text-color) !important;">Net Savings</span>
-                    </h3>
-                    
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between mb-1" style="font-size: 0.9rem;">
-                            <span>Income (Actual vs Planned)</span>
-                            <strong>¥${data.income.actual.toLocaleString()} / ¥${data.income.planned.toLocaleString()}</strong>
-                        </div>
-                        <div class="progress" style="height: 8px;">
-                            <div class="progress-bar bg-success" role="progressbar" style="width: ${incomePct}%"></div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between mb-1" style="font-size: 0.9rem;">
-                            <span>Expenses (Actual vs Planned)</span>
-                            <strong>¥${data.expenses.actual.toLocaleString()} / ¥${data.expenses.planned.toLocaleString()}</strong>
-                        </div>
-                        <div class="progress" style="height: 8px;">
-                            <div class="progress-bar ${expColor}" role="progressbar" style="width: ${expPct}%"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    // 2. Render Expense Rows
+    let expenseHTML = '';
+    data.expenses.categories.forEach(item => {
+        expenseHTML += `
+            <tr>
+                <td>${item.name}</td>
+                <td>¥${item.planned}</td>
+                <td>¥${item.actual}</td>
+                <td class="${item.diff < 0 ? 'text-danger' : 'text-success'}">¥${item.diff}</td>
+            </tr>
         `;
     });
-
-    container.innerHTML = htmlContent;
+    expensesBody.innerHTML = expenseHTML;
+    // 3. Render Income Rows
+    let incomeHTML = '';
+    data.income.categories.forEach(item => {
+        incomeHTML += `
+            <tr>
+                <td>${item.name}</td>
+                <td>¥${item.planned}</td>
+                <td>¥${item.actual}</td>
+                <td class="${item.diff < 0 ? 'text-danger' : 'text-success'}">¥${item.diff}</td>
+            </tr>
+        `;
+    });
+    incomeBody.innerHTML = incomeHTML;
 }
 
 // 3. Trigger the network request when the script loads
 fetchLiveBudget();
+
+// Test 
+// renderSummaryTable(data);

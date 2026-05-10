@@ -31,9 +31,49 @@
         <div id="page-content-wrapper" class="w-100 mt-5 p-4">
 
             <div id="overview" class="content-section active-page fade-in">
-                <h2 class="mb-4">Monthly Budget Summary</h2>
+                
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="mb-0">Monthly Budget Summary</h2>
+                    <select id="monthSelector" class="form-select w-auto fw-bold shadow-sm" onchange="changeMonth()">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
 
-                <div class="row" id="budget-summary-container">
+                <div class="row mb-4" id="top-balances-container">
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4 class="text-danger">Expenses</h4>
+                        <table class="table table-bordered table-hover spreadsheet-table" id="expenses-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Planned</th>
+                                    <th>Actual</th>
+                                    <th>Diff.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenses-body">
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h4 class="text-success">Income</h4>
+                        <table class="table table-bordered table-hover spreadsheet-table" id="income-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Planned</th>
+                                    <th>Actual</th>
+                                    <th>Diff.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="income-body">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

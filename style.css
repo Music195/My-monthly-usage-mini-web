@@ -21,6 +21,16 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Ensure borders look right in Dark Mode */
+body.dark-mode .spreadsheet-table th {
+    background-color: #2c2c2c;
+    color: #e0e0e0;
+}
+
+body.dark-mode .spreadsheet-table td {
+    border-color: #444;
+}
+
 /* Sidebar Styling */
 #sidebar {
     min-height: 100vh;
@@ -56,6 +66,21 @@ body {
 .fade-in {
     animation: fadeInAnimation 0.4s ease-in forwards;
 }
+
+/* Spreadsheet UI Styling */
+.spreadsheet-table {
+    font-size: 0.9rem; /* Slightly smaller text like Excel/Sheets */
+    background-color: var(--card-bg);
+}
+
+.spreadsheet-table th, 
+.spreadsheet-table td {
+    border: 1px solid var(--border-color);
+    padding: 6px 12px; /* Tighter padding for data density */
+    vertical-align: middle;
+}
+
+
 
 @keyframes fadeInAnimation {
     0% { opacity: 0; transform: translateY(10px); }
