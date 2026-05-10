@@ -72,41 +72,45 @@ function updateChartTheme() {
 
 // --- NEW SPREADSHEET DATA & VISUALIZATION LOGIC ---
 
-// This represents the data pulled from your Google Sheets
-const monthlyData = [
-    {
-        month: "April 2026",
-        income: { planned: 220000, actual: 275296 },
-        expenses: { planned: 130000, actual: 237292 },
-        saved: 38004
-    },
-    {
-        month: "May 2026",
-        income: { planned: 200000, actual: 0 },
-        expenses: { planned: 95000, actual: 77549 },
-        saved: -77549 
-    }
-];
+// Require Google Apps Script URL here!
+const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbye76BloB1wD50CN2I90s9zDC24gY2cnv_LHXRovlvWe_9g47fAatBtVJSBqleospH3/exec";
 
-// Function to generate the budget cards visually
-function renderOverviewCards() {
+// 1. Fetch the live data from Google Sheets
+async function fetchLiveBudget() {
     const container = document.getElementById('budget-summary-container');
-    // If the container isn't loaded on the page, don't try to run the code
-    if (!container) return; 
-    
+    if (!container) return;
+
+    // Show a loading message while waiting for Google Sheets
+    container.innerHTML = '<div class="col-12"><p class="text-muted">Loading live data from Google Sheets...</p></div>';
+
+    try {
+        const response = await fetch(SPREADSHEET_API_URL);
+        const liveData = await response.json();
+        
+        // Pass the live data to our rendering function
+        renderOverviewCards(liveData);
+    } catch (error) {
+        console.error("Error fetching live data:", error);
+        container.innerHTML = '<div class="col-12"><p class="text-danger fw-bold">Failed to connect to the spreadsheet API.</p></div>';
+    }
+}
+
+// 2. Render the visual data flows
+function renderOverviewCards(monthlyData) {
+    const container = document.getElementById('budget-summary-container');
     let htmlContent = '';
 
     monthlyData.forEach(data => {
-        // Determine colors based on positive/negative savings
+        // Skip empty rows if any exist in the spreadsheet
+        if (!data.month) return; 
+
         const isPositive = data.saved >= 0;
         const savedColor = isPositive ? 'text-success' : 'text-danger';
         const savedIcon = isPositive ? '▲' : '▼';
 
-        // Calculate visual progress bar widths (capped at 100%)
         const incomePct = data.income.planned > 0 ? Math.min((data.income.actual / data.income.planned) * 100, 100) : 0;
         const expPct = data.expenses.planned > 0 ? Math.min((data.expenses.actual / data.expenses.planned) * 100, 100) : 0;
         
-        // Turn expense bar red if you went over budget
         const expColor = data.expenses.actual > data.expenses.planned ? 'bg-danger' : 'bg-warning';
 
         htmlContent += `
@@ -147,5 +151,5 @@ function renderOverviewCards() {
     container.innerHTML = htmlContent;
 }
 
-// Call the function to render the cards when the script loads
-renderOverviewCards();
+// 3. Trigger the network request when the script loads
+fetchLiveBudget();
