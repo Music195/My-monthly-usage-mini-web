@@ -74,6 +74,31 @@ function updateChartTheme() {
 // Require Google Apps Script URL here!
 const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbwyNoxt239cTmhwOjqVAhkva9hhCR0rain07DewrY8Zzc68Y9s0hcqcIwS1gA-VVpx1/exec";
 
+const MONTH_ORDER = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+function compareMonthLabels(a, b) {
+    const parsedA = Date.parse(a);
+    const parsedB = Date.parse(b);
+
+    if (!Number.isNaN(parsedA) && !Number.isNaN(parsedB)) {
+        return parsedA - parsedB;
+    }
+
+    const monthA = MONTH_ORDER.indexOf(a);
+    const monthB = MONTH_ORDER.indexOf(b);
+
+    if (monthA !== -1 || monthB !== -1) {
+        const safeMonthA = monthA === -1 ? Number.POSITIVE_INFINITY : monthA;
+        const safeMonthB = monthB === -1 ? Number.POSITIVE_INFINITY : monthB;
+        return safeMonthA - safeMonthB || a.localeCompare(b);
+    }
+
+    return a.localeCompare(b);
+}
+
 // 1. Fetch the live data from Google Sheets
 // A global variable to store the data for all months so we don't have to re-fetch when toggling
 let globalBudgetData = {}; 
@@ -91,7 +116,7 @@ async function fetchLiveBudget() {
 
         // 1. Populate the Dropdown menu with the months found in the spreadsheet
         monthSelector.innerHTML = ''; 
-        const availableMonths = Object.keys(globalBudgetData); // e.g., ["April", "May"]
+        const availableMonths = Object.keys(globalBudgetData).sort(compareMonthLabels); // e.g., ["April", "May"]
         
         availableMonths.forEach(month => {
             const option = document.createElement('option');
