@@ -1,5 +1,6 @@
 // 1. Mock Data (Based on your Google Sheets extracts)
 const globalBudgetData = {};
+const globalTransactionsData = {}; // raw per-month transaction data, keyed by "Month Year" (e.g., "September 2026")
 
 const GOOGLE_SCRIPT_URL=
     'https://script.google.com/macros/s/AKfycbz7bQN377P10T0zuKUNuD4CDzqoXsg-VwUh9s-9Iwb-4tMUAbWNJzYgaSq3lpXag0lT/exec';
@@ -78,8 +79,6 @@ function loadSpreadsheetData(yearAndMonth) {
 
 //Convert sheet transactions into dashboard data
 function buildBudgetData(rawData, targetMonthKey) {
-    const grouped = {};
-
     const transactions = rawData.transactions || [];
     const netSavings = rawData.netSaving || 0;
     const startingBalance = rawData.startingBalance || 0;
@@ -87,58 +86,45 @@ function buildBudgetData(rawData, targetMonthKey) {
     console.log("Building budget data from transactions:", transactions);
     console.log("Starting balance:", startingBalance, "Net savings:", netSavings);
 
+    const monthData = {
+        startBalance: startingBalance,
+        endBalance: 0,
+        netSavings: netSavings,
+        expenses: { planned: 0, actual: 0, categories: [] },
+        income: { planned: 0, actual: 0, categories: [] }
+    };
+
     transactions.forEach(transaction => {
-        // Safe Date Parsing: Split the string and force it into local time
-        const [year, month, day] = transaction.date.split('/');
-        const date = new Date(year, month - 1, day); 
-        
-        const monthKey = date.toLocaleDateString('en-US', {
-            month: 'long',
-            year: 'numeric'
-        });
-
-        //  If this transaction doesn't belong to the month we want, skip it!
-        if (targetMonthKey && monthKey !== targetMonthKey) return;
-
-        if (!grouped[monthKey]) {
-            grouped[monthKey] = {
-                startBalance: startingBalance, // NOTE: Needs to be updated via your backend starting balance logic
-                endBalance: 0,   // NOTE: startBalance + saved
-                netSavings: netSavings,
-                expenses: { planned: 0, actual: 0, categories: [] },
-                income: { planned: 0, actual: 0, categories: [] }
-            };
+        if (!transaction.date.includes('/')) {
+            console.warn(`Skipping transaction with invalid date format: ${transaction.date}`);
+            return;
         }
 
         const target = transaction.category === 'Income'
-            ? grouped[monthKey].income
-            : grouped[monthKey].expenses;
+            ? monthData.income
+            : monthData.expenses;
 
         const amount = Math.abs(transaction.amount);
         target.actual += amount;
 
-        const category = target.categories.find(
-            item => item.name === transaction.category
-        );
-
+        const category = target.categories.find(item => item.name === transaction.category);
         if (category) {
             category.actual += amount;
         } else {
             target.categories.push({
                 name: transaction.category,
-                planned: 0, // Planned budgets will need to be merged separately
+                planned: 0,
                 actual: amount
             });
         }
     });
 
-    return grouped;
+    return { [targetMonthKey]: monthData };
 }
 
 
 const formatCurrency = (num) => `¥${Math.abs(num).toLocaleString()}`;
 let currentSlide = 0;
-let myChart = null;
 
 // 2. Initialization & Month Toggling
 async function initDashboard() {
@@ -187,7 +173,8 @@ async function startDashboard() {
             console.log("Loaded raw data:", rawData);
             
             const currentYearAndMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
-
+            globalTransactionsData[currentYearAndMonth] = rawData.transactions || []; 
+            console.log("Stored transactions for", currentYearAndMonth, ":", globalTransactionsData[currentYearAndMonth]);
             Object.assign(globalBudgetData, buildBudgetData(rawData, currentYearAndMonth));
             console.log("Built globalBudgetData:", globalBudgetData);
         } else {
@@ -259,28 +246,51 @@ document.addEventListener('click', event => {
 });
 
 // changeMonth is for when the user selects a new month from the dropdown. It fetches fresh data for that month and updates the dashboard.
+
+let isFetchingMonthData = false;
+
 async function changeMonth() {
+
+    if (isFetchingMonthData) {
+        console.warn("Already fetching month data. Please wait.");
+        return;
+    }
+
+    isFetchingMonthData = true;
+
     // 1. Get the newly selected month (e.g., "September 2026")
     const selectedMonth = document.getElementById('monthSelector').value;
     
-    // Let the user know the backend is calculating
-    document.getElementById('month-display').textContent = "Calculating...";
+    // Let the user know the backend is calculating and visually disable the trigger
+    const monthDisplay = document.getElementById('month-display');
+    if (monthDisplay) monthDisplay.textContent = "Calculating...";
+
+    const monthTrigger = document.getElementById('month-trigger');
+    if (monthTrigger) monthTrigger.style.pointerEvents = 'none'; // Prevents rapid clicking
 
     try {
         // 2. Ask Google for the fresh data for THIS specific month!
         // (This triggers the URL split: ?year=2026&month=September)
         const rawData = await loadSpreadsheetData(selectedMonth);
+        globalTransactionsData[selectedMonth] = rawData.transactions || [];
 
         // 3. Rebuild your data object with the new, accurate starting balance
         Object.assign(globalBudgetData, buildBudgetData(rawData, selectedMonth));
 
         // 4. Render the updated numbers on the screen!
         if (globalBudgetData[selectedMonth]) {
-            renderAll(selectedMonth);
+        renderAll(selectedMonth);
+        const txView = document.getElementById('transactions-view'); // fixed: was 'transaction-view'
+        if (txView && txView.style.display === 'block') {
+            renderTransactionPage(selectedMonth);
         }
+}
     } catch (error) {
         console.error("Failed to fetch new month data:", error);
         document.getElementById('month-display').textContent = "Error loading data";
+    } finally {
+        isFetchingMonthData = false;
+        if (monthTrigger) monthTrigger.style.pointerEvents = 'auto';
     }
 }
 
@@ -403,17 +413,22 @@ const mockTransactions = [
 ];
 
 // --- TRANSACTION RENDERING ---
-function renderTransactionPage() {
+function renderTransactionPage(monthKey) {
+    monthKey = monthKey || document.getElementById('monthSelector').value;
     const listContainer = document.getElementById('transaction-history-list');
-    
-    listContainer.innerHTML = mockTransactions.map(tx => {
-        const isExpense = tx.type === 'EXPENSE';
+    const transactions = globalTransactionsData[monthKey] || [];
+
+    if (transactions.length === 0) {
+        listContainer.innerHTML = `<p class="text-muted">No transactions for ${monthKey}.</p>`;
+        return;
+    }
+
+    listContainer.innerHTML = transactions.map((tx, index) => {
+        const isExpense = tx.category !== 'Income';
         const amountColor = isExpense ? 'text-danger' : 'text-success';
         const sign = isExpense ? '-' : '+';
-        
-        // Extract just the day for the mobile view (e.g., "28")
         const justDay = tx.date.split('/')[2];
-        
+
         return `
             <div class="list-item">
                 <div class="d-flex align-items-center gap-3">
@@ -428,7 +443,7 @@ function renderTransactionPage() {
                 </div>
                 <div class="item-stats text-end">
                     <span class="item-actual ${amountColor}">${sign}${formatCurrency(tx.amount)}</span>
-                    <button class="btn btn-link text-danger p-0 mt-1" style="font-size: 0.8rem; text-decoration: none;" onclick="deleteMockTx(${tx.id})">Delete</button>
+                    <button class="btn btn-link text-danger p-0 mt-1" style="font-size: 0.8rem; text-decoration: none;" onclick="deleteMockTx(${index}, '${monthKey}')">Delete</button>
                 </div>
             </div>
         `;
