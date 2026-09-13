@@ -1,97 +1,155 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monthly Budget Dashboard</title>
+    <title>Modern Budget Flow</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-
-<body class="light-mode">
-
-    <nav class="navbar navbar-expand-lg fixed-top shadow-sm">
-        <div class="container-fluid">
-            <a class="navbar-brand fw-bold" href="#">BudgetTracker</a>
-            <button class="btn btn-outline-secondary ms-auto" id="darkModeToggle">Dark Mode</button>
-        </div>
-    </nav>
-
-    <div class="d-flex" id="wrapper">
-        <div class="sidebar border-end" id="sidebar">
-            <div class="list-group list-group-flush mt-5">
-                <a href="#" class="list-group-item list-group-item-action p-3 nav-link-custom"
-                    onclick="loadPage('overview')">Overview</a>
-                <a href="#" class="list-group-item list-group-item-action p-3 nav-link-custom"
-                    onclick="loadPage('analytics')">Analytics</a>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="glass-sidebar">
+            <button id="brand-home" class="brand-lockup" type="button" aria-label="Return to overview">
+                <div class="brand-mark" aria-hidden="true">N</div>
+                <div>
+                    <h2 class="brand-title">NovaFlow</h2>
+                    <span class="brand-caption">Personal finance</span>
+                </div>
+            </button>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation" aria-label="Open navigation menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div id="primary-navigation" class="nav-links">
+                <a href="#" class="active"><span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span></a>
+                <a href="#"><span class="nav-icon" aria-hidden="true">↕</span><span>Transactions</span></a>
+                <a href="#"><span class="nav-icon" aria-hidden="true">◒</span><span>Analytics</span></a>
             </div>
-        </div> 
+            <div class="sidebar-footer">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span>Budget workspace</span>
+            </div>
+        </nav>
 
-        <div id="page-content-wrapper" class="w-100 mt-5 p-4">
+        <!-- Main Content -->
+        <main class="content-area">
+            <header class="dashboard-header mb-4 slide-up">
+                <div class="dashboard-heading">
+                    <span class="section-kicker">Your overview</span>
+                    <h1 id="month-display">Loading...</h1>
+                    <p>Track the shape of your money this month.</p>
+                </div>
+                <div class="month-picker">
+                    <span class="month-picker-label">Period</span>
+                    <span class="month-select-shell">
+                        <span class="month-select-icon" aria-hidden="true">◷</span>
+                        <button id="month-trigger" class="month-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                            <span id="month-trigger-label">Select month</span>
+                            <span class="month-trigger-chevron" aria-hidden="true">⌄</span>
+                        </button>
+                        <div id="month-menu" class="month-menu" role="listbox" aria-label="Select month"></div>
+                        <select id="monthSelector" class="glass-input visually-hidden-select" aria-label="Select month" onchange="changeMonth()">
+                            <!-- JS Injected -->
+                        </select>
+                    </span>
+                </div>
+            </header>
 
-            <div id="overview" class="content-section active-page fade-in">
+            <!-- Animated Slider -->
+            <section class="interactive-core glass-card slide-up" style="animation-delay: 0.1s;">
+                <div class="metrics-heading">
+                    <div>
+                        <span class="section-kicker">Monthly pulse</span>
+                        <h2>Balance at a glance</h2>
+                    </div>
+                    <span id="metrics-count" class="metrics-count" aria-live="polite">01 / 03</span>
+                </div>
+                <div class="slider-container" id="metrics-slider">
+                    <!-- JS Injected -->
+                </div>
+                <div class="slider-controls">
+                    <button id="prev-btn" type="button" aria-label="Previous metric">❮</button>
+                    <div class="dots" id="slider-dots"></div>
+                    <button id="next-btn" type="button" aria-label="Next metric">❯</button>
+                </div>
+            </section>
+
+            <section id="receipt-upload-view" class="receipt-panel glass-card mt-4 slide-up">
+                <div class="receipt-panel-header">
+                    <div>
+                        <span class="section-kicker">Receipt vault</span>
+                        <h2>Capture a receipt</h2>
+                        <p>Keep the original image with your spending records.</p>
+                    </div>
+                    <div class="receipt-orbit" aria-hidden="true">
+                        <span>↗</span>
+                    </div>
+                </div>
+
+                <div id="receipt-dropzone" class="receipt-dropzone" role="button" tabindex="0" aria-label="Choose a receipt file">
+                    <div class="receipt-icon" aria-hidden="true">↑</div>
+                    <div class="receipt-dropzone-copy">
+                        <strong class="receipt-desktop-copy">Drop a receipt here</strong>
+                        <strong class="receipt-mobile-copy">Tap to choose a receipt</strong>
+                        <span>or choose an image or PDF from your device</span>
+                    </div>
+                    <div class="receipt-actions">
+                        <label for="receipt-file" class="receipt-action receipt-action-primary">
+                            <span aria-hidden="true">＋</span> Browse files
+                        </label>
+                        <label for="receipt-camera" class="receipt-action receipt-action-secondary">
+                            <span aria-hidden="true">◉</span> Use camera
+                        </label>
+                    </div>
+                </div>
+
+                <input id="receipt-file" class="visually-hidden-input" type="file" accept="image/*,.pdf">
+                <input id="receipt-camera" class="visually-hidden-input" type="file" accept="image/*" capture="environment">
+
+                <div id="receipt-preview" class="receipt-preview" aria-live="polite"></div>
+            </section>
+
+            <!-- Fluid Details Grid -->
+            <section class="row mt-4 slide-up details-flow" style="animation-delay: 0.3s;">
+                <div class="col-md-6 mb-4">
+                    <div class="glass-card p-4 h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary pb-2">
+                            <h4 class="text-danger m-0">Expenses</h4>
+                            <span class="badge glass-badge" id="expense-summary">0 / 0</span>
+                        </div>
+                        <div id="expense-list"></div>
+                    </div>
+                </div>
+
+                <div class="col-md-6 mb-4">
+                    <div class="glass-card p-4 h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary pb-2">
+                            <h4 class="text-success m-0">Income</h4>
+                            <span class="badge glass-badge" id="income-summary">0 / 0</span>
+                        </div>
+                        <div id="income-list"></div>
+                    </div>
+                </div>
+            </section>
+            <!-- Transaction Page -->
+            <section id="transactions-view" class="glass-card mt-4 p-4 slide-up" style="display: none; animation-delay: 0.1s;">
+                <div class="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary pb-3">
+                    <h2 class="m-0">Transaction History</h2>
+                    <button class="btn btn-sm glass-badge text-white" style="cursor: pointer;">+ New Transaction</button>
+                </div>
                 
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2 class="mb-0">Monthly Budget Summary</h2>
-                    <select id="monthSelector" class="form-select w-auto fw-bold shadow-sm" onchange="changeMonth()">
-                        <option value="">Loading...</option>
-                    </select>
+                <!-- Glassmorphism List -->
+                <div id="transaction-history-list" class="dynamic-list">
+                    <!-- JS Injected -->
                 </div>
-
-                <div class="row mb-4" id="top-balances-container">
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6">
-                        <h4 class="text-danger">Expenses</h4>
-                        <table class="table table-bordered table-hover spreadsheet-table" id="expenses-table">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Category</th>
-                                    <th>Planned</th>
-                                    <th>Actual</th>
-                                    <th>Diff.</th>
-                                </tr>
-                            </thead>
-                            <tbody id="expenses-body">
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="col-md-6">
-                        <h4 class="text-success">Income</h4>
-                        <table class="table table-bordered table-hover spreadsheet-table" id="income-table">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Category</th>
-                                    <th>Planned</th>
-                                    <th>Actual</th>
-                                    <th>Diff.</th>
-                                </tr>
-                            </thead>
-                            <tbody id="income-body">
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div id="analytics" class="content-section d-none fade-in">
-                <h2 class="mb-4">Data Analytics</h2>
-                <div class="card shadow-sm">
-                    <div class="card-body">
-                        <canvas id="myChart" width="400" height="150"></canvas>
-                    </div>
-                </div>
-            </div>
-
-        </div>
+            </section>
+        </main>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="script.js"></script>
 </body>
-
 </html>

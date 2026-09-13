@@ -1,168 +1,622 @@
+// 1. Mock Data (Based on your Google Sheets extracts)
+const globalBudgetData = {};
 
-// 1. Dynamic Page Content Loading (No Reload)
-function loadPage(pageId) {
-    // Hide all sections
-    const sections = document.querySelectorAll('.content-section');
-    sections.forEach(section => {
-        section.classList.add('d-none');
-        section.classList.remove('active-page');
+const GOOGLE_SCRIPT_URL=
+    'https://script.google.com/macros/s/AKfycbz7bQN377P10T0zuKUNuD4CDzqoXsg-VwUh9s-9Iwb-4tMUAbWNJzYgaSq3lpXag0lT/exec';
+
+function loadMonthNames() {
+    return new Promise((resolve, reject) => {
+        const callbackName = `monthCallback_${Date.now()}`;
+
+        window[callbackName] = result => {
+            delete window[callbackName];
+            script.remove();
+
+            // 🔍 DEBUG LINE:
+            console.log("RAW BACKEND RESULT:", result);
+
+            if (!result.success) {
+                reject(new Error('Could not load month names'));
+                return;
+            }
+
+            resolve(result.months);
+        };
+
+        const script = document.createElement('script');
+
+        script.src =
+            `${GOOGLE_SCRIPT_URL}?action=months&callback=${callbackName}`;
+
+        script.onerror = () => {
+            delete window[callbackName];
+            script.remove();
+            reject(new Error('Could not connect to Google Sheets'));
+        };
+
+        document.body.appendChild(script);
+    });
+}
+
+
+function loadSpreadsheetData(yearAndMonth) {
+    return new Promise((resolve, reject) => {
+        const callbackName = `sheetCallback_${Date.now()}`;
+
+
+        window[callbackName] = result => {
+            delete window[callbackName];
+            script.remove();
+
+            // 🔍 DEBUG LINE:
+            console.log("RAW BACKEND RESULT:", result);
+
+            if (!result.success) {
+                reject(new Error('Could not load sheet data'));
+                return;
+            }
+
+            resolve(result);
+        };
+
+        const script = document.createElement('script');
+
+        const [targetMonth, targetYear] = yearAndMonth ? yearAndMonth.split(' ') : [new Date().toLocaleString('en-US', { month: 'long' }), new Date().getFullYear().toString()];
+
+        script.src =
+            `${GOOGLE_SCRIPT_URL}?action=transactions&year=${targetYear}&month=${targetMonth}&callback=${callbackName}`;
+
+        script.onerror = () => {
+            delete window[callbackName];
+            script.remove();
+            reject(new Error('Spreadsheet request failed'));
+        };
+
+        document.body.appendChild(script);
+    });
+}
+
+//Convert sheet transactions into dashboard data
+function buildBudgetData(rawData, targetMonthKey) {
+    const grouped = {};
+
+    const transactions = rawData.transactions || [];
+    const netSavings = rawData.netSaving || 0;
+    const startingBalance = rawData.startingBalance || 0;
+
+    console.log("Building budget data from transactions:", transactions);
+    console.log("Starting balance:", startingBalance, "Net savings:", netSavings);
+
+    transactions.forEach(transaction => {
+        // Safe Date Parsing: Split the string and force it into local time
+        const [year, month, day] = transaction.date.split('/');
+        const date = new Date(year, month - 1, day); 
+        
+        const monthKey = date.toLocaleDateString('en-US', {
+            month: 'long',
+            year: 'numeric'
+        });
+
+        //  If this transaction doesn't belong to the month we want, skip it!
+        if (targetMonthKey && monthKey !== targetMonthKey) return;
+
+        if (!grouped[monthKey]) {
+            grouped[monthKey] = {
+                startBalance: startingBalance, // NOTE: Needs to be updated via your backend starting balance logic
+                endBalance: 0,   // NOTE: startBalance + saved
+                netSavings: netSavings,
+                expenses: { planned: 0, actual: 0, categories: [] },
+                income: { planned: 0, actual: 0, categories: [] }
+            };
+        }
+
+        const target = transaction.category === 'Income'
+            ? grouped[monthKey].income
+            : grouped[monthKey].expenses;
+
+        const amount = Math.abs(transaction.amount);
+        target.actual += amount;
+
+        const category = target.categories.find(
+            item => item.name === transaction.category
+        );
+
+        if (category) {
+            category.actual += amount;
+        } else {
+            target.categories.push({
+                name: transaction.category,
+                planned: 0, // Planned budgets will need to be merged separately
+                actual: amount
+            });
+        }
     });
 
-    // Show target section with animation
-    const targetSection = document.getElementById(pageId);
-    if (targetSection) {
-        targetSection.classList.remove('d-none');
-
-        // Re-trigger CSS animation
-        targetSection.classList.remove('fade-in');
-        void targetSection.offsetWidth; // Trigger reflow
-        targetSection.classList.add('fade-in');
-        targetSection.classList.add('active-page');
-    }
+    return grouped;
 }
 
-// 2. Dark Mode Toggle
-const darkModeToggle = document.getElementById('darkModeToggle');
-darkModeToggle.addEventListener('click', () => {
-    document.body.classList.toggle('dark-mode');
 
-    // Update chart colors if analytics page is viewed
-    updateChartTheme();
-});
+const formatCurrency = (num) => `¥${Math.abs(num).toLocaleString()}`;
+let currentSlide = 0;
+let myChart = null;
 
-// Function to dynamically update chart text colors on theme switch
-function updateChartTheme() {
-    const isDark = document.body.classList.contains('dark-mode');
-    const color = isDark ? '#e0e0e0' : '#212529';
-
-    myChart.options.plugins.legend.labels.color = color;
-    myChart.options.scales.x.ticks.color = color;
-    myChart.options.scales.y.ticks.color = color;
-    myChart.update();
-}
-
-// --- NEW SPREADSHEET DATA & VISUALIZATION LOGIC ---
-
-// Require Google Apps Script URL here!
-const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbwyNoxt239cTmhwOjqVAhkva9hhCR0rain07DewrY8Zzc68Y9s0hcqcIwS1gA-VVpx1/exec";
-
-const MONTH_ORDER = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-];
-
-function compareMonthLabels(a, b) {
-    const parsedA = Date.parse(a);
-    const parsedB = Date.parse(b);
-
-    if (!Number.isNaN(parsedA) && !Number.isNaN(parsedB)) {
-        return parsedA - parsedB;
-    }
-
-    const monthA = MONTH_ORDER.indexOf(a);
-    const monthB = MONTH_ORDER.indexOf(b);
-
-    if (monthA !== -1 || monthB !== -1) {
-        const safeMonthA = monthA === -1 ? Number.POSITIVE_INFINITY : monthA;
-        const safeMonthB = monthB === -1 ? Number.POSITIVE_INFINITY : monthB;
-        return safeMonthA - safeMonthB || a.localeCompare(b);
-    }
-
-    return a.localeCompare(b);
-}
-
-// 1. Fetch the live data from Google Sheets
-// A global variable to store the data for all months so we don't have to re-fetch when toggling
-let globalBudgetData = {}; 
-
-async function fetchLiveBudget() {
-    const container = document.getElementById('top-balances-container');
-    const monthSelector = document.getElementById('monthSelector');
-    if (!container) return;
-
-    container.innerHTML = '<div class="col-12"><p class="text-muted">Loading live data from Google Sheets...</p></div>';
-
+// 2. Initialization & Month Toggling
+async function initDashboard() {
     try {
-        const response = await fetch(SPREADSHEET_API_URL);
-        globalBudgetData = await response.json(); 
+        let months;
+        // Only fetch months if the URL is provided, otherwise extract from mock data
+        if (GOOGLE_SCRIPT_URL) {
+            months = await loadMonthNames();
+        } else {
+            months = Object.keys(globalBudgetData).map(key => ({ label: key }));
+        }
 
-        // 1. Populate the Dropdown menu with the months found in the spreadsheet
-        monthSelector.innerHTML = ''; 
-        const availableMonths = Object.keys(globalBudgetData).sort(compareMonthLabels); // e.g., ["April", "May"]
-        
-        availableMonths.forEach(month => {
+        const monthSelector = document.getElementById('monthSelector');
+        monthSelector.innerHTML = '';
+
+        months.forEach(month => {
             const option = document.createElement('option');
-            option.value = month;
-            option.textContent = month;
+            option.value = month.label;
+            option.textContent = month.label;
             monthSelector.appendChild(option);
         });
 
-        // 2. Render the first available month automatically
-        if (availableMonths.length > 0) {
-            // Select the most recent month (the last one in the array)
-            const latestMonth = availableMonths[availableMonths.length - 1];
-            monthSelector.value = latestMonth;
-            renderSummaryTable(globalBudgetData[latestMonth]);
-        } else {
-            container.innerHTML = '<div class="col-12"><p class="text-warning">No Summary tabs found in spreadsheet.</p></div>';
+        const labels = months.map(month => month.label);
+        renderMonthMenu(labels);
+
+        if (labels.length > 0) {
+            monthSelector.value = labels[0];
+            renderMonthMenu(labels);
+            renderAll(labels[0]);
         }
-        
     } catch (error) {
-        console.error("Error fetching live data:", error);
-        container.innerHTML = '<div class="col-12"><p class="text-danger fw-bold">Failed to connect to the spreadsheet API.</p></div>';
+        console.error('Could not load month names:', error);
+        document.getElementById('month-trigger-label').textContent = 'Unavailable';
     }
 }
 
-// Function triggered whenever the dropdown menu changes
-function changeMonth() {
+
+//Initialize the dashboard from the sheet
+async function startDashboard() {
+    try {
+        // Only fetch if the URL is provided
+        if (GOOGLE_SCRIPT_URL) {
+
+            const rawData = await loadSpreadsheetData(null); // Fetch all months initially
+
+            console.log("Loaded raw data:", rawData);
+            
+            const currentYearAndMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+            Object.assign(globalBudgetData, buildBudgetData(rawData, currentYearAndMonth));
+            console.log("Built globalBudgetData:", globalBudgetData);
+        } else {
+            console.warn("No Sheet API URL. Using mock globalBudgetData.");
+        }
+        initDashboard();
+    } catch (error) {
+        console.error(error);
+        document.getElementById('month-display').textContent = 'Could not load spreadsheet';
+    }
+}
+
+// Start the dashboard once the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', startDashboard);
+
+
+// --- Month Menu Logic ---
+
+function renderMonthMenu(months) {
+    const menu = document.getElementById('month-menu');
+    const triggerLabel = document.getElementById('month-trigger-label');
+    const selectedMonth = document.getElementById('monthSelector').value || months[0];
+
+    menu.innerHTML = months.map(month => `
+        <button class="month-option${month === selectedMonth ? ' active' : ''}"
+                type="button" role="option" aria-selected="${month === selectedMonth}"
+                data-month="${month}">
+            <span>${month}</span>
+            <span class="month-option-check" aria-hidden="true">✓</span>
+        </button>
+    `).join('');
+
+    triggerLabel.textContent = selectedMonth || 'Select month';
+}
+
+function closeMonthMenu() {
+    document.getElementById('month-menu').classList.remove('is-open');
+    document.getElementById('month-trigger').setAttribute('aria-expanded', 'false');
+}
+
+const monthTrigger = document.getElementById('month-trigger');
+const monthMenu = document.getElementById('month-menu');
+const monthSelector = document.getElementById('monthSelector');
+
+monthTrigger.addEventListener('click', () => {
+    const isOpen = monthMenu.classList.toggle('is-open');
+    monthTrigger.setAttribute('aria-expanded', String(isOpen));
+});
+
+monthMenu.addEventListener('click', event => {
+    const option = event.target.closest('.month-option');
+    if (!option) return;
+
+    monthSelector.value = option.dataset.month;
+    document.getElementById('month-trigger-label').textContent = option.dataset.month;
+    
+    // FIX: Grab the original, clean labels directly from the hidden selector
+    const cleanLabels = Array.from(monthSelector.options).map(opt => opt.value);
+    
+    // Re-render the menu using the clean labels so the order never changes
+    renderMonthMenu(cleanLabels);
+    
+    closeMonthMenu();
+    changeMonth();
+});
+
+document.addEventListener('click', event => {
+    if (!event.target.closest('.month-picker')) closeMonthMenu();
+});
+
+// changeMonth is for when the user selects a new month from the dropdown. It fetches fresh data for that month and updates the dashboard.
+async function changeMonth() {
+    // 1. Get the newly selected month (e.g., "September 2026")
     const selectedMonth = document.getElementById('monthSelector').value;
     
-    // Look up the data for the chosen month and re-draw the tables
-    if (globalBudgetData[selectedMonth]) {
-        renderSummaryTable(globalBudgetData[selectedMonth]);
+    // Let the user know the backend is calculating
+    document.getElementById('month-display').textContent = "Calculating...";
+
+    try {
+        // 2. Ask Google for the fresh data for THIS specific month!
+        // (This triggers the URL split: ?year=2026&month=September)
+        const rawData = await loadSpreadsheetData(selectedMonth);
+
+        // 3. Rebuild your data object with the new, accurate starting balance
+        Object.assign(globalBudgetData, buildBudgetData(rawData, selectedMonth));
+
+        // 4. Render the updated numbers on the screen!
+        if (globalBudgetData[selectedMonth]) {
+            renderAll(selectedMonth);
+        }
+    } catch (error) {
+        console.error("Failed to fetch new month data:", error);
+        document.getElementById('month-display').textContent = "Error loading data";
     }
 }
 
-// 2. Render the visual data flows
-function renderSummaryTable(data) {
-    const expensesBody = document.getElementById('expenses-body');
-    const incomeBody = document.getElementById('income-body');
-    const balancesContainer = document.getElementById('top-balances-container');
+// Render all components for the selected month
+function renderAll(monthKey) {
+    document.getElementById('month-display').textContent = monthKey;
+    const data = globalBudgetData[monthKey];
 
-    // 1. Render Top Balances
-    balancesContainer.innerHTML = `
-        <div class="col-md-4"><div class="card p-3 shadow-sm"><h5>Start Balance</h5><h3>¥${data.startBalance}</h3></div></div>
-        <div class="col-md-4"><div class="card p-3 shadow-sm"><h5>End Balance</h5><h3>¥${data.endBalance}</h3></div></div>
-        <div class="col-md-4"><div class="card p-3 shadow-sm"><h5>Saved this Month</h5><h3 class="text-primary">¥${data.saved}</h3></div></div>
-    `;
-
-    // 2. Render Expense Rows
-    let expenseHTML = '';
-    data.expenses.categories.forEach(item => {
-        expenseHTML += `
-            <tr>
-                <td>${item.name}</td>
-                <td>¥${item.planned}</td>
-                <td>¥${item.actual}</td>
-                <td class="${item.diff < 0 ? 'text-danger' : 'text-success'}">¥${item.diff}</td>
-            </tr>
-        `;
-    });
-    expensesBody.innerHTML = expenseHTML;
-    // 3. Render Income Rows
-    let incomeHTML = '';
-    data.income.categories.forEach(item => {
-        incomeHTML += `
-            <tr>
-                <td>${item.name}</td>
-                <td>¥${item.planned}</td>
-                <td>¥${item.actual}</td>
-                <td class="${item.diff < 0 ? 'text-danger' : 'text-success'}">¥${item.diff}</td>
-            </tr>
-        `;
-    });
-    incomeBody.innerHTML = incomeHTML;
+    console.log(`Rendering data for ${monthKey}:`, data);
+    
+    renderMetricsSlider(data);
+    renderLists(data);
 }
 
-// 3. Trigger the network request when the script loads
-fetchLiveBudget();
+// --- End of Month Menu Logic ---
+
+
+//  Slider Logic
+function renderMetricsSlider(data) {
+    const slider = document.getElementById('metrics-slider');
+    const dotsContainer = document.getElementById('slider-dots');
+    
+    const metrics = [
+        { title: "Starting Balance", value: data.startBalance, color: '' },
+        { title: "Ending Balance", value: data.endBalance, color: '' },
+        { title: "Net Savings", value: data.netSavings, color: data.netSavings < 0 ? 'text-danger' : 'text-success' }
+    ];
+    
+    slider.innerHTML = ''; dotsContainer.innerHTML = '';
+    
+    metrics.forEach((metric, index) => {
+        const sign = metric.value < 0 ? '-' : (metric.value > 0 && metric.title === "Net Savings" ? '+' : '');
+        slider.innerHTML += `
+            <div class="slide ${index === 0 ? 'active' : ''}">
+                <h3>${metric.title}</h3>
+                <h2 class="${metric.color}">${sign}${formatCurrency(metric.value)}</h2>
+            </div>
+        `;
+        dotsContainer.innerHTML += `<div class="dot ${index === 0 ? 'active' : ''}" onclick="goToSlide(${index})"></div>`;
+    });
+
+    // Add a hidden fourth slide so the forward loop never visibly reverses.
+    slider.insertAdjacentHTML('beforeend', slider.firstElementChild.outerHTML.replace(' active', ''));
+    
+    goToSlide(0); // Reset to first slide on month change
+}
+
+function goToSlide(index, animate = true) {
+    const slider = document.getElementById('metrics-slider');
+    const slides = document.querySelectorAll('.slide');
+    const dots = document.querySelectorAll('.dot');
+    const metricsCount = document.getElementById('metrics-count');
+    
+    currentSlide = index;
+    slider.classList.toggle('no-transition', !animate);
+    slider.style.transform = `translateX(-${currentSlide * 25}%)`;
+    if (metricsCount) metricsCount.textContent = `0${(currentSlide % 3) + 1} / 03`;
+    
+    const activeSlide = currentSlide % 3;
+    slides.forEach((s, i) => s.classList.toggle('active', i === activeSlide));
+    dots.forEach((d, i) => d.classList.toggle('active', i === currentSlide));
+}
+
+document.getElementById('prev-btn').addEventListener('click', () => {
+    goToSlide(Math.max(0, currentSlide - 1));
+});
+document.getElementById('next-btn').addEventListener('click', () => {
+    advancePulse();
+});
+
+// Rotate the monthly pulse automatically every four seconds.
+function advancePulse() {
+    const nextSlide = currentSlide + 1;
+    goToSlide(nextSlide);
+
+    if (nextSlide === 3) {
+        window.setTimeout(() => goToSlide(0, false), 500);
+    }
+}
+
+window.setInterval(advancePulse, 4000);
+
+// 4. Data Lists Logic
+function renderLists(data) {
+    // Expenses
+    document.getElementById('expense-summary').textContent = `Act: ${formatCurrency(data.expenses.actual)} / Plan: ${formatCurrency(data.expenses.planned)}`;
+    document.getElementById('expense-list').innerHTML = data.expenses.categories.map(item => {
+        const diffColor = (item.planned - item.actual) < 0 ? 'text-danger' : 'text-success';
+        return `
+            <div class="list-item">
+                <span>${item.name}</span>
+                <div class="item-meta">
+                    <span class="item-actual ${diffColor}">${formatCurrency(item.actual)}</span>
+                    <span class="item-plan">Plan: ${formatCurrency(item.planned)}</span>
+                </div>
+            </div>`;
+    }).join('');
+
+    // Income
+    document.getElementById('income-summary').textContent = `Act: ${formatCurrency(data.income.actual)} / Plan: ${formatCurrency(data.income.planned)}`;
+    document.getElementById('income-list').innerHTML = data.income.categories.map(item => {
+        const diffColor = (item.actual - item.planned) < 0 ? 'text-danger' : 'text-success';
+        return `
+            <div class="list-item">
+                <span>${item.name}</span>
+                <div class="item-meta">
+                    <span class="item-actual ${diffColor}">${formatCurrency(item.actual)}</span>
+                    <span class="item-plan">Plan: ${formatCurrency(item.planned)}</span>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+
+// --- MOCK TRANSACTION DATA ---
+const mockTransactions = [
+    { id: 1, date: "2026/09/28", store: "Paidy", category: "Debt", amount: 6860, type: "EXPENSE" },
+    { id: 2, date: "2026/09/07", store: "FamilyMart", category: "Personal", amount: 250, type: "EXPENSE" },
+    { id: 3, date: "2026/09/01", store: "Bank Top-Up", category: "Utilities", amount: 1000, type: "INCOME" }
+];
+
+// --- TRANSACTION RENDERING ---
+function renderTransactionPage() {
+    const listContainer = document.getElementById('transaction-history-list');
+    
+    listContainer.innerHTML = mockTransactions.map(tx => {
+        const isExpense = tx.type === 'EXPENSE';
+        const amountColor = isExpense ? 'text-danger' : 'text-success';
+        const sign = isExpense ? '-' : '+';
+        
+        // Extract just the day for the mobile view (e.g., "28")
+        const justDay = tx.date.split('/')[2];
+        
+        return `
+            <div class="list-item">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="glass-badge text-center p-2">
+                        <span class="d-none d-md-block text-muted" style="font-size: 0.75rem;">${tx.date}</span>
+                        <span class="d-md-none fw-bold">${justDay}</span>
+                    </div>
+                    <div>
+                        <span class="item-name d-block">${tx.store}</span>
+                        <span class="item-plan">${tx.category}</span>
+                    </div>
+                </div>
+                <div class="item-stats text-end">
+                    <span class="item-actual ${amountColor}">${sign}${formatCurrency(tx.amount)}</span>
+                    <button class="btn btn-link text-danger p-0 mt-1" style="font-size: 0.8rem; text-decoration: none;" onclick="deleteMockTx(${tx.id})">Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Dummy delete function for UI testing
+function deleteMockTx(id) {
+    if(confirm("Delete this transaction?")) {
+        alert(`Transaction ${id} deleted (UI simulation only).`);
+    }
+}
+
+// --- PAGE NAVIGATION ---
+document.querySelectorAll('.nav-links a').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        // Update active class
+        document.querySelectorAll('.nav-links a').forEach(l => l.classList.remove('active'));
+        e.target.classList.add('active');
+        document.querySelectorAll('.nav-links a').forEach(l => l.removeAttribute('aria-current'));
+        e.currentTarget.setAttribute('aria-current', 'page');
+        closeMobileMenu();
+        
+        const isTransactions = e.currentTarget.textContent.includes('Transactions');
+        
+        // Toggle view visibility
+        document.querySelector('.interactive-core').style.display = isTransactions ? 'none' : 'block';
+        document.querySelector('.details-flow').style.display = isTransactions ? 'none' : 'grid';
+        document.getElementById('receipt-upload-view').style.display = isTransactions ? 'none' : 'block';
+        
+        const txView = document.getElementById('transactions-view');
+        txView.style.display = isTransactions ? 'block' : 'none';
+        
+        if(isTransactions) renderTransactionPage();
+    });
+});
+
+const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+const primaryNavigation = document.getElementById('primary-navigation');
+
+function closeMobileMenu() {
+    primaryNavigation.classList.remove('is-open');
+    mobileMenuToggle.setAttribute('aria-expanded', 'false');
+    mobileMenuToggle.setAttribute('aria-label', 'Open navigation menu');
+}
+
+document.getElementById('brand-home').addEventListener('click', () => {
+    const overviewLink = document.querySelector('.nav-links a');
+    overviewLink.click();
+});
+
+mobileMenuToggle.addEventListener('click', () => {
+    const isOpen = primaryNavigation.classList.toggle('is-open');
+    mobileMenuToggle.setAttribute('aria-expanded', String(isOpen));
+    mobileMenuToggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
+});
+
+// --- RECEIPT UPLOAD HANDLING ---
+// Receipt Preview Logic
+
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
+
+function handleReceiptSelected(file) {
+    if (!file) return;
+
+    if (file.size > MAX_FILE_SIZE) {
+        alert('File is too large. Please select a file smaller than 15MB.');
+        return;
+    }
+
+    const preview = document.getElementById('receipt-preview');
+    preview.replaceChildren();
+
+    if (file.type.startsWith('image/')) {
+        const image = document.createElement('img');
+
+        image.src = URL.createObjectURL(file);
+        image.alt = 'Receipt preview';
+        image.className = 'img-fluid rounded';
+        image.style.maxWidth = '100%';
+        image.style.maxHeight = '400px';
+
+        preview.appendChild(image);
+    } else {
+        preview.textContent = 'Please select an image receipt';
+    }
+    uploadReceipt(file);
+
+}
+
+// Receipt Upload Logic
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+
+        reader.readAsDataURL(file);
+    });
+}
+
+async function uploadReceipt(file) {
+    const preview = document.getElementById('receipt-preview');
+
+    try {
+        preview.textContent = 'Preparing receipt...';
+
+        const dataUrl = await fileToBase64(file);
+        const base64Data = dataUrl.split(',')[1];
+
+        preview.textContent = 'Uploading receipt...';
+
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify({
+                fileName: file.name,
+                mimeType: file.type,
+                data: base64Data
+            })
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.message || 'Upload failed');
+        }
+
+        preview.textContent = `Uploaded: ${result.fileName}`;
+
+        setTimeout(() => {
+            preview.replaceChildren();
+            document.getElementById('receipt-file').value = '';
+            document.getElementById('receipt-camera').value = '';
+        }, 1500);
+    } catch (error) {
+        console.error('Receipt upload failed:', error);
+        preview.textContent = 'Upload failed. Please try again.';
+    }
+}
+
+
+document.getElementById('receipt-file').addEventListener('change', event => {
+    handleReceiptSelected(event.target.files[0]);
+});
+
+document.getElementById('receipt-camera').addEventListener('change', event => {
+    handleReceiptSelected(event.target.files[0]);
+});
+
+const receiptDropzone = document.getElementById('receipt-dropzone');
+const receiptFileInput = document.getElementById('receipt-file');
+
+['dragenter', 'dragover'].forEach(eventName => {
+    receiptDropzone.addEventListener(eventName, event => {
+        event.preventDefault();
+        receiptDropzone.classList.add('is-dragging');
+    });
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    receiptDropzone.addEventListener(eventName, event => {
+        event.preventDefault();
+        receiptDropzone.classList.remove('is-dragging');
+    });
+});
+
+receiptDropzone.addEventListener('drop', event => {
+    handleReceiptSelected(event.dataTransfer.files[0]);
+});
+
+receiptDropzone.addEventListener('click', event => {
+    if (!event.target.closest('label')) {
+        receiptFileInput.click();
+    }
+});
+
+receiptDropzone.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        receiptFileInput.click();
+    }
+});
+
+
