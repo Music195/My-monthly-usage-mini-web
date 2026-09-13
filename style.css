@@ -599,6 +599,7 @@ body::before {
   font-size: 1.1rem;
   font-weight: 600;
   display: block;
+  white-space: nowrap;
 }
 .item-plan {
   font-size: 0.85rem;

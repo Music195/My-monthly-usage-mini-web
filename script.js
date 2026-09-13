@@ -405,13 +405,6 @@ function renderLists(data) {
 }
 
 
-// --- MOCK TRANSACTION DATA ---
-const mockTransactions = [
-    { id: 1, date: "2026/09/28", store: "Paidy", category: "Debt", amount: 6860, type: "EXPENSE" },
-    { id: 2, date: "2026/09/07", store: "FamilyMart", category: "Personal", amount: 250, type: "EXPENSE" },
-    { id: 3, date: "2026/09/01", store: "Bank Top-Up", category: "Utilities", amount: 1000, type: "INCOME" }
-];
-
 // --- TRANSACTION RENDERING ---
 function renderTransactionPage(monthKey) {
     monthKey = monthKey || document.getElementById('monthSelector').value;
@@ -426,7 +419,6 @@ function renderTransactionPage(monthKey) {
     listContainer.innerHTML = transactions.map((tx, index) => {
         const isExpense = tx.category !== 'Income';
         const amountColor = isExpense ? 'text-danger' : 'text-success';
-        const sign = isExpense ? '-' : '+';
         const justDay = tx.date.split('/')[2];
 
         return `
@@ -442,8 +434,8 @@ function renderTransactionPage(monthKey) {
                     </div>
                 </div>
                 <div class="item-stats text-end">
-                    <span class="item-actual ${amountColor}">${sign}${formatCurrency(tx.amount)}</span>
-                    <button class="btn btn-link text-danger p-0 mt-1" style="font-size: 0.8rem; text-decoration: none;" onclick="deleteMockTx(${index}, '${monthKey}')">Delete</button>
+                    <span class="item-actual ${amountColor}">${formatCurrency(tx.amount)}</span>
+                    <!-- <button class="btn btn-link text-danger p-0 mt-1" style="font-size: 0.8rem; text-decoration: none;" onclick="deleteMockTx(${index}, '${monthKey}')">Delete</button> -->
                 </div>
             </div>
         `;
