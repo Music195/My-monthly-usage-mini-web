@@ -119,6 +119,9 @@ function buildBudgetData(rawData, targetMonthKey) {
         }
     });
 
+    // ENDING balance = what you started with + what came in − what went out
+    monthData.endBalance = monthData.startBalance + monthData.income.actual - monthData.expenses.actual;
+
     return { [targetMonthKey]: monthData };
 }
 
