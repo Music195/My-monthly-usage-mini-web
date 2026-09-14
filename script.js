@@ -1,3 +1,14 @@
+// Updating the brand date mark
+function updateBrandDate() {
+    const brandDate = document.getElementById('brand-date');
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    brandDate.textContent = day;
+    console.log("Brand date updated to:", day);
+}
+
+document.addEventListener('DOMContentLoaded', updateBrandDate);
+
 // 1. Mock Data (Based on your Google Sheets extracts)
 const globalBudgetData = {};
 const globalTransactionsData = {}; // raw per-month transaction data, keyed by "Month Year" (e.g., "September 2026")
@@ -85,9 +96,11 @@ function buildBudgetData(rawData, targetMonthKey) {
 
     console.log("Building budget data from transactions:", transactions);
     console.log("Starting balance:", startingBalance, "Net savings:", netSavings);
+    let currentMonthSavings;
 
     const monthData = {
         startBalance: startingBalance,
+        currentMonthSavings: currentMonthSavings || 0,
         endBalance: 0,
         netSavings: netSavings,
         expenses: { planned: 0, actual: 0, categories: [] },
@@ -121,6 +134,7 @@ function buildBudgetData(rawData, targetMonthKey) {
 
     // ENDING balance = what you started with + what came in − what went out
     monthData.endBalance = monthData.startBalance + monthData.income.actual - monthData.expenses.actual;
+    monthData.currentMonthSavings = monthData.income.actual - monthData.expenses.actual;
 
     return { [targetMonthKey]: monthData };
 }
@@ -314,22 +328,30 @@ function renderAll(monthKey) {
 //  Slider Logic
 function renderMetricsSlider(data) {
     const slider = document.getElementById('metrics-slider');
+  
     const dotsContainer = document.getElementById('slider-dots');
     
     const metrics = [
+        { title: "Current Balance", value: data.endBalance, color: '' },
+        { title: "Current Month Savings", value: data.currentMonthSavings, color: data.currentMonthSavings < 0 ? 'text-danger' : 'text-success' },
         { title: "Starting Balance", value: data.startBalance, color: '' },
-        { title: "Ending Balance", value: data.endBalance, color: '' },
         { title: "Net Savings", value: data.netSavings, color: data.netSavings < 0 ? 'text-danger' : 'text-success' }
     ];
+
+    const totalDomSlides = metrics.length + 1; // +1 for the hidden fourth slide
+    const slideWidthPercentage = 100 / totalDomSlides;
+
+    slider.style.width = `${totalDomSlides * 100}%`;
     
-    slider.innerHTML = ''; dotsContainer.innerHTML = '';
+    slider.innerHTML = '';
+    dotsContainer.innerHTML = '';
     
     metrics.forEach((metric, index) => {
         const sign = metric.value < 0 ? '-' : (metric.value > 0 && metric.title === "Net Savings" ? '+' : '');
         slider.innerHTML += `
-            <div class="slide ${index === 0 ? 'active' : ''}">
+            <div class="slide ${index === 0 ? 'active' : ''}" style="width: ${slideWidthPercentage}%">
                 <h3>${metric.title}</h3>
-                <h2 class="${metric.color}">${sign}${formatCurrency(metric.value)}</h2>
+                <h2 class="${metric.color}">${formatCurrency(metric.value)}</h2>
             </div>
         `;
         dotsContainer.innerHTML += `<div class="dot ${index === 0 ? 'active' : ''}" onclick="goToSlide(${index})"></div>`;
@@ -346,13 +368,21 @@ function goToSlide(index, animate = true) {
     const slides = document.querySelectorAll('.slide');
     const dots = document.querySelectorAll('.dot');
     const metricsCount = document.getElementById('metrics-count');
+
+    const totalMetrics = dots.length; // real slide count (the clone has no dot)
+    const stepPercentage = 100 / (totalMetrics + 1); // +1 for the hidden fourth slide
     
     currentSlide = index;
     slider.classList.toggle('no-transition', !animate);
-    slider.style.transform = `translateX(-${currentSlide * 25}%)`;
-    if (metricsCount) metricsCount.textContent = `0${(currentSlide % 3) + 1} / 03`;
+    slider.style.transform = `translateX(-${currentSlide * stepPercentage}%)`;
+
+    const activeSlide = currentSlide % totalMetrics; // Use modulo to loop back to the first slide after the last one
+    if (metricsCount) {
+        const current = String(activeSlide + 1).padStart(2, '0');
+        const total = String(totalMetrics).padStart(2, '0');
+        metricsCount.textContent = `${current} / ${total}`;
+    } 
     
-    const activeSlide = currentSlide % 3;
     slides.forEach((s, i) => s.classList.toggle('active', i === activeSlide));
     dots.forEach((d, i) => d.classList.toggle('active', i === currentSlide));
 }
@@ -364,6 +394,16 @@ document.getElementById('next-btn').addEventListener('click', () => {
     advancePulse();
 });
 
+// pause auto-advance on hover/touch
+let isPaused = false;
+const slider = document.getElementById('metrics-slider');
+slider.addEventListener('mouseenter', () => isPaused = true);
+slider.addEventListener('mouseleave', () => isPaused = false);
+slider.addEventListener('touchstart', () => isPaused = true, { passive: true });
+slider.addEventListener('touchend', () => isPaused = false, { passive: true });
+console.log("Slider hover/touch pause logic initialized.");
+console.log ("Mouse is hovering over the slider:", isPaused);
+
 // Rotate the monthly pulse automatically every four seconds.
 function advancePulse() {
     const nextSlide = currentSlide + 1;
@@ -374,7 +414,10 @@ function advancePulse() {
     }
 }
 
-window.setInterval(advancePulse, 4000);
+
+window.setInterval(() => {
+    if (!isPaused) advancePulse();
+}, 4000);
 
 // 4. Data Lists Logic
 function renderLists(data) {
