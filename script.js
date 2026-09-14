@@ -406,10 +406,11 @@ console.log ("Mouse is hovering over the slider:", isPaused);
 
 // Rotate the monthly pulse automatically every four seconds.
 function advancePulse() {
+    const totalMetrics = document.querySelectorAll('.dot').length; // real slide count (the clone has no dot)
     const nextSlide = currentSlide + 1;
     goToSlide(nextSlide);
 
-    if (nextSlide === 3) {
+    if (nextSlide === totalMetrics) {
         window.setTimeout(() => goToSlide(0, false), 500);
     }
 }
@@ -417,7 +418,7 @@ function advancePulse() {
 
 window.setInterval(() => {
     if (!isPaused) advancePulse();
-}, 4000);
+}, 10000);
 
 // 4. Data Lists Logic
 function renderLists(data) {
