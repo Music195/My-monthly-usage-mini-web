@@ -410,20 +410,21 @@ async function startDashboard() {
     }
 }
 
-// Called whenever the user picks a different month from the dropdown (see
-// the monthMenu click listener in section 7, which calls this after
-// updating the hidden <select>'s value).
+// Tracks how many month-fetches are currently in flight. Used only for
+// logging / optional future UI (e.g. a subtle spinner). It is intentionally
+// NOT used as a hard lock — users can switch months freely while older
+// requests finish. Stale responses are ignored via the
+// "still the selected month?" check inside changeMonth / silentBackgroundSync.
+let inFlightMonthFetches = 0;
+
 async function changeMonth() {
-
-    if (isFetchingMonthData) {
-        console.warn("Already fetching month data. Please wait.");
-        return;
-    }
-
+    // Capture the month the user asked for *now*. Later, when the network
+    // response arrives, we compare against the *current* selection so a
+    // slow request for an old month never overwrites a newer one.
     const selectedMonth = document.getElementById('monthSelector').value;
+    if (!selectedMonth) return;
 
     const monthDisplay = document.getElementById('month-display');
-    const monthTrigger = document.getElementById('month-trigger');
 
     // Stale-while-revalidate: if we already have this month's numbers in
     // memory (fetched earlier this session, or hydrated from localStorage
@@ -442,8 +443,9 @@ async function changeMonth() {
         if (monthDisplay) monthDisplay.textContent = "Calculating...";
     }
 
-    isFetchingMonthData = true;
-    if (monthTrigger) monthTrigger.style.pointerEvents = 'none'; // Prevents rapid clicking
+    // Allow concurrent fetches. The user can switch months freely; we just
+    // ignore results that no longer match the currently selected month.
+    inFlightMonthFetches++;
 
     try {
         // (This triggers the URL split: ?year=2026&month=September)
@@ -456,25 +458,25 @@ async function changeMonth() {
         // Only redraw if the user hasn't since switched to yet another
         // month while this fetch was still in flight — otherwise we'd
         // overwrite whatever they're currently looking at with stale data.
-        if (globalBudgetData[selectedMonth] && document.getElementById('monthSelector').value === selectedMonth) {
+        if (document.getElementById('monthSelector').value === selectedMonth) {
             renderAll(selectedMonth);
             const txView = document.getElementById('transactions-view');
             if (txView && txView.style.display === 'block') {
                 renderTransactionPage(selectedMonth);
             }
             saveDashboardCache();
+        } else {
+            console.log(`Ignoring stale response for ${selectedMonth} (user is now on ${document.getElementById('monthSelector').value})`);
         }
     } catch (error) {
         console.error("Failed to fetch new month data:", error);
-        // If we already had cached data on screen, leave it displayed
-        // rather than blanking it out with an error message — the user
-        // still sees last-known numbers instead of nothing.
-        if (!alreadyHaveData) {
-            document.getElementById('month-display').textContent = "Error loading data";
+        // Only show the error if this month is still selected *and* we had
+        // nothing cached for it. Otherwise leave the previous view alone.
+        if (!alreadyHaveData && document.getElementById('monthSelector').value === selectedMonth) {
+            if (monthDisplay) monthDisplay.textContent = "Error loading data";
         }
     } finally {
-        isFetchingMonthData = false;
-        if (monthTrigger) monthTrigger.style.pointerEvents = 'auto';
+        inFlightMonthFetches = Math.max(0, inFlightMonthFetches - 1);
     }
 }
 
@@ -501,15 +503,17 @@ function renderAll(monthKey) {
    ============================================================================ */
 
 async function silentBackgroundSync() {
-    if (isFetchingMonthData) {
-        console.log("Sync skipped — a fetch is already in flight.");
-        return;
-    }
-
     const selectedMonth = document.getElementById('monthSelector').value;
     if (!selectedMonth) return;
 
-    isFetchingMonthData = true;
+    // Still allow concurrent work; we just skip the noisy log when many
+    // requests are already flying (e.g. rapid month switching).
+    if (inFlightMonthFetches > 0) {
+        console.log("Background sync deferred — user-initiated fetch(es) already in flight.");
+        return;
+    }
+
+    inFlightMonthFetches++;
     console.log("Quietly refreshing data for", selectedMonth);
 
     try {
@@ -529,13 +533,15 @@ async function silentBackgroundSync() {
             if (txView && txView.style.display === 'block') {
                 renderTransactionPage(selectedMonth);
             }
+        } else {
+            console.log(`Ignoring stale background sync for ${selectedMonth}`);
         }
     } catch (error) {
         // Deliberately console.warn, not console.error, and no UI change:
         // a failed background sync just means "keep showing what we had."
         console.warn("Background sync failed, keeping existing data on screen:", error);
     } finally {
-        isFetchingMonthData = false;
+        inFlightMonthFetches = Math.max(0, inFlightMonthFetches - 1);
     }
 }
 
