@@ -699,6 +699,7 @@ function goToSlide(index, animate = true) {
     slider.style.transform = `translateX(-${currentSlide * stepPercentage}%)`;
 
     const activeSlide = currentSlide % totalMetrics; // wraps back to slide 0 once we pass the last real one
+    
     if (metricsCount) {
         const current = String(activeSlide + 1).padStart(2, '0');
         const total = String(totalMetrics).padStart(2, '0');
@@ -726,6 +727,47 @@ slider.addEventListener('touchstart', () => isPaused = true, { passive: true });
 slider.addEventListener('touchend', () => isPaused = false, { passive: true });
 console.log("Slider hover/touch pause logic initialized.");
 console.log("Mouse is hovering over the slider:", isPaused);
+
+// --- Swipe support ---
+// touchstart/touchend alone (the old listeners) only ever paused
+// auto-advance — they never actually read which way the finger moved, so
+// swiping never changed slides. These three listeners track the finger's
+// horizontal position from touch-down to touch-up and, if it moved far
+// enough, treat it as a "swipe left" (next slide) or "swipe right"
+// (previous slide) — the same gesture a native carousel app would expect.
+let swipeStartX = 0;
+let swipeDeltaX = 0;
+const SWIPE_THRESHOLD_PX = 40; // how far a touch has to travel to count as a swipe, not a tap
+ 
+slider.addEventListener('touchstart', event => {
+    isPaused = true; // still pause auto-advance while a finger is down
+    swipeStartX = event.touches[0].clientX;
+    swipeDeltaX = 0;
+}, { passive: true });
+ 
+slider.addEventListener('touchmove', event => {
+    swipeDeltaX = event.touches[0].clientX - swipeStartX;
+}, { passive: true });
+ 
+slider.addEventListener('touchend', () => {
+    isPaused = false;
+ 
+    if (Math.abs(swipeDeltaX) > SWIPE_THRESHOLD_PX) {
+        if (swipeDeltaX < 0) {
+            // Finger moved left -> reveal the slide to the right -> next slide.
+            advancePulse();
+        } else {
+            // Finger moved right -> reveal the slide to the left -> previous slide.
+            goToSlide(Math.max(0, currentSlide - 1));
+        }
+    }
+    // A short tap (delta below the threshold) intentionally does nothing —
+    // that's what the dots and prev/next buttons are for.
+ 
+    swipeStartX = 0;
+    swipeDeltaX = 0;
+}, { passive: true });
+
 
 // Advances to the next slide, using the loop trick described in
 // renderMetricsSlider() above: when we land on the cloned slide, silently
