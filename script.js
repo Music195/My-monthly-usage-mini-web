@@ -344,6 +344,12 @@ async function initDashboard() {
         }
 
         const monthSelector = document.getElementById('monthSelector');
+        // Remember what was selected BEFORE we wipe the dropdown — this is
+        // whatever hydrateFromCache() (or a previous render) had picked.
+        // Without this, rebuilding the options below always defaulted back
+        // to the first month, undoing the "stay on my last-viewed month"
+        // behavior every single page load.
+        const previousSelection = monthSelector.value;
         monthSelector.innerHTML = '';
 
         months.forEach(month => {
@@ -357,9 +363,19 @@ async function initDashboard() {
         renderMonthMenu(labels);
 
         if (labels.length > 0) {
-            monthSelector.value = labels[0];
+            // Keep showing the month the user was already on, as long as it's
+            // still a valid option — only fall back to the first month if we
+            // have nothing better to go on (e.g. a brand new visit).
+            const targetMonth = labels.includes(previousSelection) ? previousSelection : labels[0];
+
+            monthSelector.value = targetMonth;
             renderMonthMenu(labels); // re-render so the "active" checkmark matches the selection
-            renderAll(labels[0]);
+
+            // Avoid an unnecessary re-render if this exact month is already
+            // showing correctly on screen (e.g. hydrateFromCache just painted it).
+            if (targetMonth !== previousSelection || !globalBudgetData[targetMonth]) {
+                renderAll(targetMonth);
+            }
             saveDashboardCache();
         }
     } catch (error) {
@@ -884,9 +900,11 @@ mobileMenuToggle.addEventListener('click', () => {
     mobileMenuToggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
 });
 
-// Same pattern as the month picker's "click outside to close"
-// add a document-level click listener that closes the mobile nav menu when the tap lands outside it 
-// (and isn't the hamburger button itself, which already has its own toggle logic).
+// Tapping/clicking anywhere outside the open mobile menu closes it — same
+// "click outside to dismiss" pattern used for the month picker above.
+// The closest('#mobile-menu-toggle') check stops this from immediately
+// re-closing the menu the instant the hamburger button's own click
+// listener just opened it (that click event bubbles up to this listener too).
 document.addEventListener('click', event => {
     if (!primaryNavigation.classList.contains('is-open')) return;
     if (event.target.closest('#primary-navigation') || event.target.closest('#mobile-menu-toggle')) return;
