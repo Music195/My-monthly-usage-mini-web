@@ -171,6 +171,7 @@ async function initDashboard() {
             monthSelector.value = labels[0];
             renderMonthMenu(labels);
             renderAll(labels[0]);
+            saveDashboardCache();
         }
     } catch (error) {
         console.error('Could not load month names:', error);
@@ -194,6 +195,7 @@ async function startDashboard() {
             console.log("Stored transactions for", currentYearAndMonth, ":", globalTransactionsData[currentYearAndMonth]);
             Object.assign(globalBudgetData, buildBudgetData(rawData, currentYearAndMonth));
             console.log("Built globalBudgetData:", globalBudgetData);
+            saveDashboardCache();
         } else {
             console.warn("No Sheet API URL. Using mock globalBudgetData.");
         }
@@ -204,8 +206,7 @@ async function startDashboard() {
     }
 }
 
-// Start the dashboard once the DOM is fully loaded
-document.addEventListener('DOMContentLoaded', startDashboard);
+
 
 
 // --- Month Menu Logic ---
@@ -273,16 +274,28 @@ async function changeMonth() {
         return;
     }
 
-    isFetchingMonthData = true;
-
     // 1. Get the newly selected month (e.g., "September 2026")
     const selectedMonth = document.getElementById('monthSelector').value;
-    
-    // Let the user know the backend is calculating and visually disable the trigger
-    const monthDisplay = document.getElementById('month-display');
-    if (monthDisplay) monthDisplay.textContent = "Calculating...";
 
+    const monthDisplay = document.getElementById('month-display');
     const monthTrigger = document.getElementById('month-trigger');
+
+    // If we already have this month's data in memory (from an earlier fetch
+    // this session, or hydrated from localStorage), show it instantly —
+    // no "Calculating..." wait — then quietly refresh it from the network.
+    const alreadyHaveData = Boolean(globalBudgetData[selectedMonth]);
+    if (alreadyHaveData) {
+        renderAll(selectedMonth);
+        const txView = document.getElementById('transactions-view');
+        if (txView && txView.style.display === 'block') {
+            renderTransactionPage(selectedMonth);
+        }
+    } else {
+        // No cached data for this month yet — fall back to the loading state.
+        if (monthDisplay) monthDisplay.textContent = "Calculating...";
+    }
+
+    isFetchingMonthData = true;
     if (monthTrigger) monthTrigger.style.pointerEvents = 'none'; // Prevents rapid clicking
 
     try {
@@ -294,17 +307,23 @@ async function changeMonth() {
         // 3. Rebuild your data object with the new, accurate starting balance
         Object.assign(globalBudgetData, buildBudgetData(rawData, selectedMonth));
 
-        // 4. Render the updated numbers on the screen!
-        if (globalBudgetData[selectedMonth]) {
-        renderAll(selectedMonth);
-        const txView = document.getElementById('transactions-view'); // fixed: was 'transaction-view'
-        if (txView && txView.style.display === 'block') {
-            renderTransactionPage(selectedMonth);
+        // 4. Render the updated numbers on the screen — only if the user
+        // hasn't switched to a different month again while this was in flight.
+        if (globalBudgetData[selectedMonth] && document.getElementById('monthSelector').value === selectedMonth) {
+            renderAll(selectedMonth);
+            const txView = document.getElementById('transactions-view'); // fixed: was 'transaction-view'
+            if (txView && txView.style.display === 'block') {
+                renderTransactionPage(selectedMonth);
+            }
+            saveDashboardCache();
         }
-}
     } catch (error) {
         console.error("Failed to fetch new month data:", error);
-        document.getElementById('month-display').textContent = "Error loading data";
+        if (!alreadyHaveData) {
+            document.getElementById('month-display').textContent = "Error loading data";
+        }
+        // If we already had cached data on screen, leave it displayed rather
+        // than replacing it with an error — the user still sees last-known numbers.
     } finally {
         isFetchingMonthData = false;
         if (monthTrigger) monthTrigger.style.pointerEvents = 'auto';
@@ -673,4 +692,111 @@ receiptDropzone.addEventListener('keydown', event => {
     }
 });
 
+// --- CACHING LOGIC ---
+const BUDGET_CACHE_KEY = 'budgetDashboardCache_v1';
 
+function saveDashboardCache() {
+    try {
+        localStorage.setItem(BUDGET_CACHE_KEY, JSON.stringify({
+            months: Array.from(monthSelector.options).map(opt => opt.value),
+            selectedMonth: monthSelector.value,
+            budgetData: globalBudgetData,
+            transactionsData: globalTransactionsData
+        }));
+    } catch (error) {
+        console.warn('Failed to save dashboard cache:', error);
+    }
+}
+
+function hydrateFromCache() {
+    let cache;
+    try {
+        const raw = localStorage.getItem(BUDGET_CACHE_KEY);
+        if (!raw) return false;
+        cache = JSON.parse(raw);
+    } catch (error) {
+        console.warn('Failed to hydrate from cache:', error);
+        return false;
+    }
+    if (!cache || !cache.months || !cache.budgetData || !cache.transactionsData) return false;
+
+    Object.assign(globalBudgetData, cache.budgetData || {});
+    Object.assign(globalTransactionsData, cache.transactionsData || {});
+    
+    const monthSelector = document.getElementById('monthSelector');
+    monthSelector.innerHTML = '';
+    cache.months.forEach(month => {
+        const option = document.createElement('option');
+        option.value = month;
+        option.textContent = month;
+        monthSelector.appendChild(option);
+    });
+
+    const targetMonth = (cache.selectedMonth && globalBudgetData[cache.selectedMonth])
+        ? cache.selectedMonth
+        : Object.keys(globalBudgetData)[0];
+
+    if (!targetMonth) {
+        console.warn('Cache had no usable budget data to render.');
+        return false;
+    }
+
+    renderMonthMenu(cache.months);
+    monthSelector.value = targetMonth;
+    renderAll(targetMonth);
+
+    console.log('Hydrated dashboard from cache:', cache);
+    return true;
+}
+
+
+// Start the dashboard once the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', () => {
+    hydrateFromCache();
+    startDashboard();
+});
+
+// --- SILENT BACKGROUND SYNC ---
+
+async function silentBackgroundSync() {
+    if (isFetchingMonthData) {
+        console.log("Sync skipped — a fetch is already in flight.");
+        return;
+    }
+
+    const selectedMonth = document.getElementById('monthSelector').value;
+    if (!selectedMonth) return;
+
+    isFetchingMonthData = true;
+    console.log("Quietly refreshing data for", selectedMonth);
+
+    try {
+        // Same JSONP fetch your changeMonth() already uses
+        const rawData = await loadSpreadsheetData(selectedMonth);
+
+        globalTransactionsData[selectedMonth] = rawData.transactions || [];
+        Object.assign(globalBudgetData, buildBudgetData(rawData, selectedMonth));
+        saveDashboardCache();
+
+        // Only redraw if the user hasn't switched months while this was in flight
+        if (document.getElementById('monthSelector').value === selectedMonth) {
+            renderAll(selectedMonth);
+
+            const txView = document.getElementById('transactions-view');
+            if (txView && txView.style.display === 'block') {
+                renderTransactionPage(selectedMonth);
+            }
+        }
+    } catch (error) {
+        console.warn("Background sync failed, keeping existing data on screen:", error);
+    } finally {
+        isFetchingMonthData = false;
+    }
+}
+
+// Trigger a silent refresh whenever the tab regains focus
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        silentBackgroundSync();
+    }
+});
