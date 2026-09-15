@@ -504,7 +504,16 @@ body::before {
   display: flex;
   transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   width: 400%;
+  touch-action: pan-y;
 }
+
+.slider-container,
+.slide {
+  user-select: none;           /* stops the browser from letting this be selected as text */
+  -webkit-user-select: none;   /* Safari/iOS needs its own prefix for this */
+  -webkit-touch-callout: none; /* stops iOS's long-press "Copy/Share" popup specifically */
+}
+
 .slider-container.no-transition { transition: none; }
 .slide {
   width: 25%;
