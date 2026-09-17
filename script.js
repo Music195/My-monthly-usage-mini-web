@@ -778,7 +778,7 @@ function advancePulse() {
     goToSlide(nextSlide);
 
     if (nextSlide === totalMetrics) {
-        window.setTimeout(() => goToSlide(0, false), 500);
+        window.setTimeout(() => goToSlide(0, false), 300); // 100ms delay to let the CSS transition finish
     }
 }
 
@@ -786,7 +786,7 @@ function advancePulse() {
 // hovering/touching it right now.
 window.setInterval(() => {
     if (!isPaused) advancePulse();
-}, 10000);
+}, 20000);
 
 
 /* ============================================================================
