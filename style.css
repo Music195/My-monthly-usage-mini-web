@@ -648,7 +648,8 @@ body::before {
     padding: 0.85rem 1rem;
     border-right: none;
     border-bottom: 1px solid var(--glass-border);
-    position: relative;
+    position: sticky;
+    top: 0;
     z-index: 200;
   }
   .brand-caption,
