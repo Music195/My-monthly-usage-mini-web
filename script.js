@@ -852,7 +852,13 @@ function renderTransactionPage(monthKey) {
         return;
     }
 
-    listContainer.innerHTML = transactions.map((tx, index) => {
+    const sortedTransactions = transactions.slice().sort((a, b) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        return dateB - dateA; // descending order
+    });
+
+    listContainer.innerHTML = sortedTransactions.map((tx, index) => {
         const isExpense = tx.category !== 'Income';
         const amountColor = isExpense ? 'text-danger' : 'text-success';
         const justDay = tx.date.split('/')[2]; // matches whatever date format the sheet uses, e.g. "MM/DD/YYYY"
