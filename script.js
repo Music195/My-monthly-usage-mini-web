@@ -846,6 +846,7 @@ function renderTransactionPage(monthKey) {
     monthKey = monthKey || document.getElementById('monthSelector').value;
     const listContainer = document.getElementById('transaction-history-list');
     const transactions = globalTransactionsData[monthKey] || [];
+    console.log(`Rendering transaction history for ${monthKey}:`, transactions);
 
     if (transactions.length === 0) {
         listContainer.innerHTML = `<p class="text-muted">No transactions for ${monthKey}.</p>`;
@@ -853,10 +854,13 @@ function renderTransactionPage(monthKey) {
     }
 
     const sortedTransactions = transactions.slice().sort((a, b) => {
-        const dateA = new Date(a.date);
-        const dateB = new Date(b.date);
+        const dateA = new Date(a.lastModified);
+        const dateB = new Date(b.lastModified);
+        console.log(`Comparing ${a.lastModified} (${dateA}) vs ${b.lastModified} (${dateB})`);
         return dateB - dateA; // descending order
     });
+
+    console.log(`Sorted transactions for ${monthKey}:`, sortedTransactions);
 
     listContainer.innerHTML = sortedTransactions.map((tx, index) => {
         const isExpense = tx.category !== 'Income';
@@ -867,7 +871,7 @@ function renderTransactionPage(monthKey) {
             <div class="list-item">
                 <div class="d-flex align-items-center gap-3">
                     <div class="glass-badge text-center p-2">
-                        <span class="d-none d-md-block text-muted" style="font-size: 0.75rem;">${tx.date}</span>
+                        <span class="d-none d-md-block" style="font-size: 0.75rem;">${tx.date}</span>
                         <span class="d-md-none fw-bold">${justDay}</span>
                     </div>
                     <div>
